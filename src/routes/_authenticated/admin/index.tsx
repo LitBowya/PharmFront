@@ -2,6 +2,8 @@ import { Button } from '#/components/ui/button'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '#/components/ui/dialog'
@@ -99,21 +101,22 @@ function AdminPage() {
   }
 
   // ── Delete ────────────────────────────────────────────────────────────────
-  const [deleting, setDeleting] = useState<string | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Receptionist | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
-  async function handleDelete(r: Receptionist) {
-    if (
-      !window.confirm(`Delete "${r.name}" permanently? This cannot be undone.`)
-    )
-      return
-    setDeleting(r.id)
+  async function confirmDelete() {
+    if (!deleteTarget) return
+    setDeleting(true)
+    setDeleteError(null)
     try {
-      await deleteReceptionistFn({ data: { userId: r.id } })
+      await deleteReceptionistFn({ data: { userId: deleteTarget.id } })
       await queryClient.invalidateQueries({ queryKey: ['receptionists'] })
+      setDeleteTarget(null)
     } catch {
-      alert('Failed to delete receptionist. Please try again.')
+      setDeleteError('Failed to delete. Please try again.')
     } finally {
-      setDeleting(null)
+      setDeleting(false)
     }
   }
 
@@ -215,10 +218,17 @@ function AdminPage() {
             variant="outline"
             size="sm"
             className="h-7 px-2.5 text-xs text-destructive hover:text-destructive border-destructive/20 hover:bg-destructive/5"
-            onClick={() => void handleDelete(row.original)}
-            disabled={deleting === row.original.id}
+            onClick={() => {
+              setDeleteTarget(row.original)
+              setDeleteError(null)
+            }}
+            disabled={deleting && deleteTarget?.id === row.original.id}
           >
-            {deleting === row.original.id ? '…' : <Trash2 className="size-3" />}
+            {deleting && deleteTarget?.id === row.original.id ? (
+              '…'
+            ) : (
+              <Trash2 className="size-3" />
+            )}
           </Button>
         </div>
       ),
@@ -416,6 +426,54 @@ function AdminPage() {
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete confirmation dialog ─────────────────────────────────── */}
+      <Dialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open && !deleting) {
+            setDeleteTarget(null)
+            setDeleteError(null)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Delete Receptionist</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to permanently delete{' '}
+              <strong>{deleteTarget?.name}</strong>? This action cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteError && (
+            <div className="rounded-lg bg-destructive/10 border border-destructive/20 px-4 py-3 text-sm text-destructive">
+              {deleteError}
+            </div>
+          )}
+
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteTarget(null)
+                setDeleteError(null)
+              }}
+              disabled={deleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void confirmDelete()}
+              disabled={deleting}
+            >
+              {deleting ? 'Deleting…' : 'Delete'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
