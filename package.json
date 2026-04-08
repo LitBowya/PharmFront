@@ -7,7 +7,8 @@
   },
   "scripts": {
     "dev": "vite dev --port 5173",
-    "build": "vite build --preset vercel",
+    "start": "node .output/server/index.mjs",
+    "build": "vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "eslint",
@@ -43,6 +44,7 @@
     "drizzle-kit": "^0.31.9",
     "drizzle-orm": "^0.45.1",
     "lucide-react": "^1.7.0",
+    "nitro": "^3.0.260311-beta",
     "pg": "^8.16.3",
     "radix-ui": "^1.4.3",
     "react": "^19.2.0",
