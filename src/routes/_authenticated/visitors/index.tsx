@@ -601,7 +601,9 @@ function VisitorsPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="ci-host">Person to Visit</Label>
+                <Label htmlFor="ci-host">
+                  Person to Visit <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="ci-host"
                   placeholder="e.g. Dr. Kebede"
