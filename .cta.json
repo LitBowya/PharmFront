@@ -1,0 +1,29 @@
+{
+  "projectName": "receiptionist",
+  "mode": "file-router",
+  "typescript": true,
+  "packageManager": "bun",
+  "includeExamples": false,
+  "tailwind": true,
+  "addOnOptions": {
+    "drizzle": {
+      "database": "postgresql"
+    }
+  },
+  "envVarValues": {},
+  "git": true,
+  "routerOnly": false,
+  "version": 1,
+  "framework": "react",
+  "chosenAddOns": [
+    "eslint",
+    "neon",
+    "drizzle",
+    "form",
+    "shadcn",
+    "table",
+    "better-auth",
+    "store",
+    "tanstack-query"
+  ]
+}
