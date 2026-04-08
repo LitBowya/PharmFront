@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "vite dev --port 5173",
-    "build": "vite build",
+    "build": "vite build --preset vercel",
     "preview": "vite preview",
     "test": "vitest run",
     "lint": "eslint",
