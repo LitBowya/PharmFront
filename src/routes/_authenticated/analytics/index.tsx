@@ -1,13 +1,24 @@
+import { Button } from '#/components/ui/button'
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
 } from '#/components/ui/chart'
+import { Label } from '#/components/ui/label'
 import type { SessionUser } from '#/lib/auth'
-import { getAdminAnalyticsFn } from '#/lib/visitors'
+import { downloadCSV, downloadPDF } from '#/lib/export-report'
+import { getAdminAnalyticsFn, getExportDataFn } from '#/lib/visitors'
 import { useQuery } from '@tanstack/react-query'
 import { createFileRoute, redirect } from '@tanstack/react-router'
-import { Activity, ClipboardList, TrendingUp, Users } from 'lucide-react'
+import {
+  Activity,
+  ClipboardList,
+  Download,
+  FileDown,
+  TrendingUp,
+  Users,
+} from 'lucide-react'
+import { useState } from 'react'
 import {
   Bar,
   BarChart,
@@ -79,6 +90,147 @@ function StatCard({ icon, label, value, sub, accent }: StatCardProps) {
   )
 }
 
+// ─── Export helpers ──────────────────────────────────────────────────────────
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
+function todayISO(): string {
+  return isoDate(new Date())
+}
+
+function weekStartISO(): string {
+  const d = new Date()
+  d.setDate(d.getDate() - 6)
+  return isoDate(d)
+}
+
+type Preset = 'today' | 'week' | 'custom'
+
+function ExportReportCard() {
+  const [preset, setPreset] = useState<Preset>('today')
+  const [customFrom, setCustomFrom] = useState(todayISO)
+  const [customTo, setCustomTo] = useState(todayISO)
+  const [loading, setLoading] = useState<'csv' | 'pdf' | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const getDateRange = (): { dateFrom: string; dateTo: string } => {
+    if (preset === 'today') return { dateFrom: todayISO(), dateTo: todayISO() }
+    if (preset === 'week')
+      return { dateFrom: weekStartISO(), dateTo: todayISO() }
+    return {
+      dateFrom: customFrom || todayISO(),
+      dateTo: customTo || todayISO(),
+    }
+  }
+
+  const handleExport = async (type: 'csv' | 'pdf') => {
+    setLoading(type)
+    setError(null)
+    try {
+      const { dateFrom, dateTo } = getDateRange()
+      const payload = await getExportDataFn({ data: { dateFrom, dateTo } })
+      if (type === 'csv') {
+        downloadCSV(payload)
+      } else {
+        downloadPDF(payload)
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed')
+    } finally {
+      setLoading(null)
+    }
+  }
+
+  const activeBtn =
+    'bg-[rgba(20,184,166,0.1)] text-[rgb(20,184,166)] border border-[rgba(20,184,166,0.4)] font-semibold'
+  const inactiveBtn =
+    'bg-transparent text-muted-foreground border border-border hover:border-[rgba(20,184,166,0.3)] hover:text-foreground'
+
+  return (
+    <div className="rounded-xl border bg-card p-5">
+      <div className="flex items-center gap-2 mb-4">
+        <FileDown className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold">Export Report</h3>
+      </div>
+
+      {/* Preset selector */}
+      <div className="flex flex-wrap gap-2 mb-4">
+        {(['today', 'week', 'custom'] as Preset[]).map((p) => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setPreset(p)}
+            className={`rounded-md px-3 py-1 text-xs transition-colors ${
+              preset === p ? activeBtn : inactiveBtn
+            }`}
+          >
+            {p === 'today'
+              ? 'Today'
+              : p === 'week'
+                ? 'Last 7 Days'
+                : 'Custom Range'}
+          </button>
+        ))}
+      </div>
+
+      {/* Custom date range pickers */}
+      {preset === 'custom' && (
+        <div className="flex flex-wrap items-end gap-3 mb-4">
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs text-muted-foreground">From</Label>
+            <input
+              type="date"
+              value={customFrom}
+              max={customTo || todayISO()}
+              onChange={(e) => setCustomFrom(e.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs text-muted-foreground">To</Label>
+            <input
+              type="date"
+              value={customTo}
+              min={customFrom}
+              max={todayISO()}
+              onChange={(e) => setCustomTo(e.target.value)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-xs focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Export buttons */}
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!!loading}
+          onClick={() => handleExport('csv')}
+          className="gap-1.5 text-xs"
+        >
+          <Download className="size-3.5" />
+          {loading === 'csv' ? 'Generating…' : 'Export CSV'}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!!loading}
+          onClick={() => handleExport('pdf')}
+          className="gap-1.5 text-xs"
+        >
+          <Download className="size-3.5" />
+          {loading === 'pdf' ? 'Generating…' : 'Export PDF'}
+        </Button>
+      </div>
+
+      {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+    </div>
+  )
+}
+
 // ─── Chart configs ────────────────────────────────────────────────────────────
 const trendConfig = {
   checkins: { label: 'Check-ins', color: 'rgb(20, 184, 166)' },
@@ -112,14 +264,17 @@ function AnalyticsPage() {
   return (
     <div className="space-y-8">
       {/* Header */}
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-          Admin
-        </p>
-        <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          30-day visitor and receptionist activity overview.
-        </p>
+      <div className="flex justify-between items-start">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+            Admin
+          </p>
+          <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            30-day visitor and receptionist activity overview.
+          </p>
+        </div>
+        <ExportReportCard />
       </div>
 
       {/* KPI Strip */}
@@ -323,6 +478,8 @@ function AnalyticsPage() {
           </BarChart>
         </ChartContainer>
       </div>
+
+      {/* Row 5: Export */}
     </div>
   )
 }

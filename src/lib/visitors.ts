@@ -153,7 +153,9 @@ export const getVisitorLogPagedFn = createServerFn({ method: 'POST' })
       end.setHours(23, 59, 59, 999)
       conds.push(lte(checkins.checkInAt, end))
     }
-    const where = conds.length ? and(...(conds as [typeof conds[0]])) : undefined
+    const where = conds.length
+      ? and(...(conds as [(typeof conds)[0]]))
+      : undefined
 
     const [{ total }] = await db
       .select({ total: count() })
@@ -290,7 +292,10 @@ export const getDashboardChartsFn = createServerFn().handler(async () => {
       )
   const onSiteScope = isAdmin
     ? isNull(checkins.checkOutAt)
-    : and(eq(checkins.receptionistId, currentUser.id), isNull(checkins.checkOutAt))
+    : and(
+        eq(checkins.receptionistId, currentUser.id),
+        isNull(checkins.checkOutAt),
+      )
   const departedScope = isAdmin
     ? isNotNull(checkins.checkOutAt)
     : and(
@@ -309,8 +314,14 @@ export const getDashboardChartsFn = createServerFn().handler(async () => {
     .groupBy(sql`DATE(${checkins.checkInAt})`)
     .orderBy(sql`DATE(${checkins.checkInAt})`)
 
-  const [onSite] = await db.select({ val: count() }).from(checkins).where(onSiteScope)
-  const [departed] = await db.select({ val: count() }).from(checkins).where(departedScope)
+  const [onSite] = await db
+    .select({ val: count() })
+    .from(checkins)
+    .where(onSiteScope)
+  const [departed] = await db
+    .select({ val: count() })
+    .from(checkins)
+    .where(departedScope)
 
   return {
     daily: daily.map((d) => ({
@@ -320,10 +331,78 @@ export const getDashboardChartsFn = createServerFn().handler(async () => {
     })),
     statusPie: [
       { status: 'on_site', label: 'On Site', value: Number(onSite?.val ?? 0) },
-      { status: 'departed', label: 'Departed', value: Number(departed?.val ?? 0) },
+      {
+        status: 'departed',
+        label: 'Departed',
+        value: Number(departed?.val ?? 0),
+      },
     ],
   }
 })
+
+// ─── Export report data (admin only) ─────────────────────────────────────────
+
+const exportFiltersSchema = z.object({
+  dateFrom: z.string(),
+  dateTo: z.string(),
+})
+
+type ExportFilters = z.infer<typeof exportFiltersSchema>
+
+export const getExportDataFn = createServerFn({ method: 'POST' })
+  .inputValidator((data: ExportFilters) => exportFiltersSchema.parse(data))
+  .handler(async ({ data }) => {
+    const currentUser = await requireSession()
+    if (currentUser.role !== 'admin') throw new Error('Forbidden')
+
+    const from = new Date(data.dateFrom)
+    from.setHours(0, 0, 0, 0)
+    const to = new Date(data.dateTo)
+    to.setHours(23, 59, 59, 999)
+
+    const rows = await db
+      .select({
+        checkinId: checkins.id,
+        checkInAt: checkins.checkInAt,
+        checkOutAt: checkins.checkOutAt,
+        notes: checkins.notes,
+        visitorName: visitors.fullName,
+        visitorPhone: visitors.phone,
+        purpose: visitors.purpose,
+        host: visitors.host,
+        department: visitors.department,
+        receptionistName: user.name,
+      })
+      .from(checkins)
+      .innerJoin(visitors, eq(checkins.visitorId, visitors.id))
+      .leftJoin(user, eq(checkins.receptionistId, user.id))
+      .where(and(gte(checkins.checkInAt, from), lte(checkins.checkInAt, to)))
+      .orderBy(desc(checkins.checkInAt))
+
+    const totalCheckins = rows.length
+    const totalCheckouts = rows.filter((r) => r.checkOutAt !== null).length
+    const onSite = totalCheckins - totalCheckouts
+
+    // Per-receptionist summary
+    const byRec: Record<string, { checkins: number; checkouts: number }> = {}
+    for (const r of rows) {
+      const name = r.receptionistName ?? 'Unknown'
+      if (!byRec[name]) byRec[name] = { checkins: 0, checkouts: 0 }
+      byRec[name].checkins++
+      if (r.checkOutAt) byRec[name].checkouts++
+    }
+
+    return {
+      rows,
+      summary: { totalCheckins, totalCheckouts, onSite },
+      receptionistSummary: Object.entries(byRec).map(([name, s]) => ({
+        name,
+        ...s,
+      })),
+      dateFrom: data.dateFrom,
+      dateTo: data.dateTo,
+    }
+  })
 
 // ─── Admin analytics (30-day) ─────────────────────────────────────────────────
 
@@ -375,9 +454,15 @@ export const getAdminAnalyticsFn = createServerFn().handler(async () => {
     .groupBy(sql`EXTRACT(HOUR FROM ${checkins.checkInAt})`)
     .orderBy(sql`EXTRACT(HOUR FROM ${checkins.checkInAt})`)
 
-  const [todayStat] = await db.select({ val: count() }).from(checkins).where(gte(checkins.checkInAt, start))
+  const [todayStat] = await db
+    .select({ val: count() })
+    .from(checkins)
+    .where(gte(checkins.checkInAt, start))
   const [totalStat] = await db.select({ val: count() }).from(checkins)
-  const [onSiteStat] = await db.select({ val: count() }).from(checkins).where(isNull(checkins.checkOutAt))
+  const [onSiteStat] = await db
+    .select({ val: count() })
+    .from(checkins)
+    .where(isNull(checkins.checkOutAt))
   const [uniqueStat] = await db.select({ val: count() }).from(visitors)
 
   return {
